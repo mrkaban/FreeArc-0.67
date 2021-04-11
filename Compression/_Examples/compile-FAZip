@@ -1,0 +1,16 @@
+#Run Freearc "compile" first to establish compilation environment
+exe=fazip
+ctempdir=/tmp/out/FreeArc
+defines="-DFREEARC_UNIX -DFREEARC_INTEL_BYTE_ORDER -D_FILE_OFFSET_BITS=64 -O3 -I../_Encryption -I../_Encryption/headers -I../_Encryption/hashes -Wno-write-strings"
+# ****** -DFREEARC_MOTOROLA_BYTE_ORDER -DFREEARC_ONLY_ALIGNED_ACCESS *******
+mkdir $ctempdir
+cd ..
+chmod +x compile
+./compile
+cd _Examples
+c_modules="$ctempdir/C_4x4.o $ctempdir/C_BCJ.o $ctempdir/C_Delta.o $ctempdir/C_Dict.o $ctempdir/C_DisPack.o $ctempdir/C_External.o $ctempdir/C_GRZip.o $ctempdir/C_LZ4.o $ctempdir/C_LZMA.o $ctempdir/C_LZP.o $ctempdir/C_MM.o $ctempdir/C_PPMD.o $ctempdir/C_REP.o $ctempdir/C_Tornado.o $ctempdir/C_TTA.o $ctempdir/Common.o $ctempdir/CompressionLibrary.o"
+# $ctempdir/C_CLS.o
+options="-s"
+gcc $options $defines $c_modules -lstdc++ -lrt -lm -o $exe $* fazip.cpp
+options="-static -s -pthread"
+gcc $options $defines $c_modules -lstdc++ -lrt -lm -o $exe-static $* fazip.cpp

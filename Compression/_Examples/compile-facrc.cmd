@@ -1,0 +1,1 @@
+@gcc -DFREEARC_WIN -DFREEARC_INTEL_BYTE_ORDER -D_UNICODE -DUNICODE -O3 -funroll-loops -fno-exceptions -fno-rtti -fomit-frame-pointer -fstrict-aliasing -ffast-math -fforce-addr facrc.cpp ../Common.cpp ../MultiThreading.cpp -ofacrc.exe -lshell32 -lole32 -loleaut32 -s -Xlinker --large-address-aware -lstdc++
