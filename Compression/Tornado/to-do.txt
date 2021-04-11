@@ -1,0 +1,278 @@
+LZ77 model:
+    -no lz if len small and dist large: don't have much sense with our MINLEN=4
+    -hash4+3: only 1% gain even on ghc.exe
+    -hash5+4: 48->46.7 mb but 2x slower (22->46sec: 240mb compressed using 16mb hash)
+    -0x65a8e9b4 for hash
+    +combined len+dist encoding a-la cabarc - will make decoding a bit faster, but who cares? :)
+    -save into hash records unused part of hash value in order to make
+        fast check of usability of this hash slot (like it is already
+        done in REP); would be especially helpful on larger hashes
+    -save into hash record 4 bits of p[5] - would be useful to skip trying second..fourth hash records
+    +save into hash record 4 bytes of data
+    +lazy search (and return of 3-byte strings) for highest compression mode
++l8... - добавило 1 лишнюю секунду на обработку каждых 280 мб
++compare with ideal hash function crc+crc+..
+    (((CRCTab[(x)&255] ^ _rotr(CRCTab[((x)>>8)&255],8) ^ _rotr(CRCTab[((x)>>16)&255],16) ^ _rotr(CRCTab[((x)>>24)&255],24)) >> HashShift) & HashMask)
++store unused hash bits + a few more chars in hash   (1.5x speedup)
+    491->367 (340 for hash4x), 91->68, 51->43 secs
+    +использовать первый байт под хеш 4х байтов
+    +отдельные циклы для len=3,4,5,6
+    +используя t, быстро проверять матчи длины до 7 в циклах len3..5 и при проверке первой строки
+    проверить заново длины совпадений строк в хеш-цепочке
++fast arithmetics! total=2^n
+    отдельный буфер для чтения битовых полей; или лучше bits+arith в одном потоке данных
++lazy matches                                        (+3.5% compression)
+    unsuccessfully tried:
+      ush good_length; - reduce lazy search above this match length
+      ush max_lazy;    - do not perform lazy search above this match length
+      ush nice_length; - quit search above this match length
++arith / huffman / bitio                         (+10% compresion for bit i/o, +20% for huffman)
+    byte i/o -> class: +0.3 sec on !all
++3-byte strings
++выкидывать короткие далёкие строки
+    +можно улучшить сжатие на 0.3% если выкидывать ещё и 6-байтовые строки
++better hash multiplier
+-5% less compression of src (l4 h22) compared to mmdet. strange?
+-several encoding tables: after char, after small string, large string
+-add custom MF for l=4/8 (3/6?) what means -1 sec. on !all
+    don't have much meaning because caching MF isn't any worser
++FIXED: MatchFinder2 несовместим с 3-байтовыми словами / lazy matching (update_hash рассчитано на обновления как минимум в 3 байта)
++FAST_COMPILE - only 4 models actually used by -1..-12
++сделать hash_row_width частью класса MatchFinder
++FIXED: caching MF - нечётные слова должны инициализироваться содержимым начала буфера
++sliding window for higher modes (-4/-5 - m.buffer/2, -6 and up - m.buffer/4)
++write data to outstreams in 16mb chunks
++64k-1m non-sliding window for -1..-3
++improved caching MF - memory accesses only for matches>=7 or last check
+-max_lazy may improve speed/ratio for -4..-6 modes
+-don't check more than one real string (option? only for 2-element hash?)
+    -skip checking second string if first is large enough
++[almost] full hash_update for highest modes
++IMPOSSIBLE_LEN/IMPOSSIBLE_DIST for EOF encoding, encode() for first 2 chars
++FIXED: -s- -p2 problem (was returning len==0 instead of MINLEN-1)
+-при lazy поиске учитывать длину пред. матча, пропуская 3-байтовый и часть 4-байтового поиска
++TOO_FAR checks moved into caching MF
++output buffer now flushed only when reading next input chunk
++tor_(de)compress - returns error code or FREEARC_OK
++freearc: блокировать тред чтения при записи данных
++7z's lazy heuristic
+  +при поиске строки - if newlen=len+1 and newdist>dist*64 - ignore it
++2-byte strings, +repdist, +repboth, +repchar
++обработка маленьких файлов!
++восстановить bytecoder
+  +large len - a few bytes representation to ensure no overflows
++auto-decrease hash (and buf) for small files
++удлинять назад next match в lazy matcher
+-repdistN+-delta - 0.4% на текстах
++HuffmanEncoder::encode2
++fixed: использование в проверке на REPCHAR инициализационного значения repdist0=1
+        использование псевдодистанции от MMx для проверки на REPCHAR (учти: декодер должен иметь ту же очередь последних дистанций)
+        переход diffed table через сдвиг буфера
+          восстановление данных должно делаться после обратного diff, иначе этот diff запишет мусор в элемент, следующий за восстановленным
+        использование p->table_len вместо обрезанного len
+        write_end мог выходить за границу буфера
+        read_next_chunk должен возвращать 0 если больше сжимать нечего (последний матч добил до конца уже прочитанных данных и новых прочесть не удалось)
+        101..104 не совсем аккуратно использовался для data table codes
+-context-based char encoding
+  separate coder table after \0 or after \0..\31
++diffing tables
+-repboth, repchar1..3
+-split caching hash into two parts - pointers and data
+  +cyclic hash for large N
++ChangePair in MFN
+  -ChangePair for len1-len2>1
+при достаточно длинном и далёком матче выкидывать его из хеша в предположении, что текущая строка его прекрасно заменит
+  -делать сдвиг отдельно, после цикла поиска матчей (попробовано при неразделённом CMF)
+block-static arithmetic coder - may improve compression by 1-2%
+? caching MF для -l2
++ 5/6-byte main hash for highest modes (-7 and up)
+hash3+lazy - скомбинировать в другом порядке, поскольку нет смысла искать 3-байтовую строку после матча?
+заполнить конец буфера случайными данными и убрать проверки p+len<bufend
+  заменить проверки p+len<=bufend одной в compress0()
+ограничить проверяемую дистанцию в -1/-2/-3? чтобы не вылезать за размер кеша
+rolz 1+2+3+4
+minor thoughts:
+  small outbuf for -5 and higher modes
+  increase HUFBLOCKSIZE for -2/-3  (100k - -0.2sec)
+
+text files -5/-6: disable 2/3-byte searching, repchar and use encode(..., MINLEN=4), switch to hufcoder(?)
+hufcoder: disable REPDIST, +fast qsort<>
+huf&ari: EOB, check for text-like stats, switch into text mode
+
+use only one bit for flag in bytecoder
+bitcoder: 30-bit length encoding - make it a part of 8-bit encoding
+huf/ari - improve "first block" encoding, adaptation (currently, up to 1/64 of codespace is wasted),
+  +EOB code
+? выводить данные блоками, соответствующими входным chunks, storing несжавшихся блоков
+    header = 1 byte flags + 3 bytes len
+более детализированные disttables для маленьких len
+-1,-2,-3?: +no MM, no REP*
+huf/ari: вместо cnt++ делать cnt+=10 - должно увеличить точность кодирования (это увеличивает размер таблиц, что замедляет кодирование; возмсожно, проблему можно решить использованием 3-уровневых таблиц кодирования)
+ST4/BWT sorting for exhaustive string searching
+
+ускорение tor:5
+  -ускорение lazy поиска (Кадач)
+  ускорение сравнения матчей by Lasse Reinhold (см. ниже)
+  -искать MM tables by rep* codes
+  оптимизировать huf и перейти на него
+  для текстов:
+    не использовать 2/3-byte matches
+    использовать huf c большим блоком вместо арифметики
+    не проверять на repchar/repdist/repboth
+    не искать MM tables
+
+ускорение/улучшение сжатия tor:7-12
+  +использовать бессдвиговую технологию хеширования и -u1
+  +2/3hash: увеличить размер, вставлять все строки
+  +искать в большом хеше строки длины >=6/7, спихнув меньшие во вспомогат. хэш
+  пропускать символы 0/' ' при хешировании
+  check matches at REP_DIST first (should improve compression for binary files)
+
+http://encode.ru/threads/848-LZ77-speed-optimization-2-mem-accesses-per-quot-round-quot by Lasse Reinhold
+    Nice, I tried almos the same thing. Of course caching byte 3...6 (and 1?) is mostly an advantage when you want to
+    find the longest match out of N possibe because you don&#039;t save the match verification of byte 0..2.
+
+    For finding best match out of N possible (N being 8 in this sample code), I once experimented with caching byte
+    0...7 on x64 and looped trough them like:
+
+    long long diff_best = 0, best_i = 0;
+    for(i = 1; i < 8; i++)
+    {
+    long long diff = cache[hash][i] ^ *ptr_input;
+    if (diff & -diff > diff_best)
+    {
+    best_i = i;
+    best_diff = diff;
+    }
+    }
+
+    It utilizes that x & -x returns a word where only the lowest bit in x is set (see http://www.jjj.de/bitwizardry/
+    for more code snippets) and it&#039;s a good alternative to using shr/shb bit scan instructions of ARM, x86, x64,
+    etc, which unfortunatly isn&#039;t standard in C.
+
+    I just got a ~10% speedup compared to the more naive method of just comparing byte N of *ptr_>input with byte N of
+    cache[hash][i] where N is the length of the best match so far, excluding worse matches immediately. I tough speedup
+    would be greater and it&#039;s probably worth looking into again.
+
+    "only lowest bit is set" should have been "only lowest set bit is set"
+
+
++-h1mb in cmdline
++-z/-d options, by default auto depending on file extension
++-h1m -9 == -9 -h1m (учитывать сначала выбор пресета, затем уточняющие его опции)
++-odir/ -odir\ -od:
++64-bit insize/outsize
++-b128k, m.hashsize вместо hashlog, print block/hashsize in help with k/m suffix
++CHECK mallocs
++dir_exists=file_exists(dir\.) || end_with(:/\)
++progress indicator in console title
+-t, -f force overwrite, -k keep src files, stdin->stdout by default
+make non-inline as much functions as possible (optimize .exe size): +MatchFinder.cpp +LZ77_Coder.cpp
+****Tornado 0.2 compressing VC, 41243 kb     --noheader option disables this
+****-1: 16kb hash1...: done 5%
+****-1: 16kb hash1...: 17876 kb (12.7%), 23.333 sec, 88.6 mb/s
+.tor signature, version, flags, crc
+? записывать сжатые данные перед чтением следующего chunk и использовать storing при отсутствии сжатия (обнулять huf/ari-table)
+? уменьшить хеш назад вдвое (сначала проверить эффект на других файлах, 200-300 kb на all)
++print predefined methods definitions in help screen
+-mem должно демонстрировать режимы сжатия от -1 до -9?  -bench для моих внутренних тестов
+tor_compress: при сжатии файла ==buffer происходит лишний перенос данных перед тем, как прочесть 0 байт :)
+
+
+
+shift buffer by 1/8, 1/16... for large -l
+-h512m:64, -ah512m:64, -h -ah -b<128m
+hufblock=50.000 in -3 & for texts/compressed
+no rep codes in -3  (also useful for -2 -c3)
+
+len7*2: add accept_match check in first cycle
+multithreading (support multiple blocks in decoder)
+optimal parsing
+split cycled caching hash into two parts - pointers and data (probably useful only for optimal parsing because there is no update() in this case)
+-t2 full delta filter
+-6 -> switch to CCMF<4>	?
+MFN<MINLEN,MAXLEN> with checks for dist<48k/... and exit when len>=MAXLEN
+maxdist for len=8..9 in accept_match() - may improve compression for 256mb-1gb dictionaries
+chunked hash (15 elements + pointer to the next chunk)
+-use prevlen to skip checking useless matches (with len<=prevlen)
+-if len>32 then lazy_search_row/=4
++match_writer that dynamically uses byte/bit/huf/aricoder
++kadach huffman   (5000/3)
+
+1. tor -5/-6: ищем матчи для p+1, в хеш-таблице сохраняем p[0,4,5,6],
+              проверяем сразу матчи на p и p+1,
+              если НИЧЕГО не найдено - ищем матчи для p до дистанции 48к
+2. в старших режимах - после нахождения матча размером N+4 переключаемся на поиск
+        матчей для p+4 (или p+1..p+3). или просто ищем на шару :)
+
+ускорение lazy parsing благодаря одновременной проверке двух позиций
+lzma: искать сразу матчи для p и p+1, заполняя две таблицы. при отсутствии результатов - быстрый поиск для p (до 48к)
+buffer-to-buffer decompression, including the PROGRESS callback
+^Break - закрывать/удалять файлы
+hash4+hash5 - найти сначала 4-байтовый матч, затем передать его в mf5 чтобы он проверялся в changepair и т.п.
+?отдельные опции для типа matchfinder и его длины (4..7)
+?LazyMatching<Hash3..> -> Hash3<LazyMatching..>
+
+
+bugs?
+1. UINT len1 = mymin(MINLEN-1, 4); - полагается на то, что по 4 совпадающим закешированным байтам можно судить о совпадении 4 соответствующих байт матча, но shift() записывает туда buf+1, не сбрасывая при этом закешированные байты
+2. последние MAX_HASHED_BYTES байт кодировать напрямую, чтобы избавиться от части проверок p<=bufend и сделать работу корректной на последних 12 байтах файла и маленьких файлах
+2a. accept_match зачем-то проверяет p<=bufend вместо p+len<=bufend
+2b. for (; p+len1<bufend && val32equ(p+len1, q1+len1); len1+=4);  должен проверять p+len1+4<=bufend
++3. files are opened in write-sharing mode!
+4. 1<<lb(m.buffer*8) и след. строка - учитывать что возможно hash_row_width != 2^n; перенести проверку и нормализацию значений в отдельную функцию,
+   вызываемую ДО печати параметров сжатия на экран и в c_tornado - сразу после парсинга всех параметров метода
+5. r.filesize = -1 - может при положительном get_flen можно полагаться на него (в linux/win)? сделать также в fazip/srep
+
+Optimal parsing: сжатие
++ multiple matches
++ don't restrict 2/3/4-byte matches to small distances
++ REP* codes - either check already found matches against prevdist0..3 or just compare data at prevdist positions. struct PRICES{price, len, dist, prevdist0..3}
++ проверять промежуточные len для repdist
++ CachingMatchFinder<5..7> support
++ chash - вычислять HashShift для l!=2^n и проверить как это отразится на скорости -5/-6
+- 3gb/6gb dictionary and hash (Tornado LZ stream format doesn't support dictionaries > 1GB)
+- REPCHAR (как ни странно, это уменьшает сжатие)
+- пробовать найденный матч (p,len) не только как кандидата на (p,len-i), но и как кандидата на (p+i,len-i) и вообще (p+i,len-j) where j<=i
+  опробовано на p+1 - безрезультатно
+- при пропуске матчей учесть всё же несколько матчей прежде чем включить режим silence
+* replace 2/3-byte match with 3/4+ byte one if dist is smaller
+* suggest - < или <= в зависимости от других целей (уменьшить число кодируемых элементов для увеличения скорости, дать больше шансов для REPCHAR..)
+* после Rescale() - заново делать расчёт оптимальных цен для ещё невыведенной части буфера
+* плавный переход от одного оптим. буфера к следующему (например кодировать только до lastp-1024byte, а затем начать заполнять новый буфер оставив в нём эти 1024 позиции)
+  или можно найти позицию с миним. ценой среди последних 1024 и закодировать только до неё
+  или выходить при слишком длинном матче или в отсутствии альтернатив кодирования как lzma
+
+Optimal parsing: скорость
+- при Rescale() высчитать цену каждого из 842 слотов в huf/ari таблице. тогда в evaluate_position нужно будет только найти номер слота
+- dcode = find_dcode(dist);  for(len=...)  price (dcode,len) = prices_arr[dcode][lcode(len)]
++ проверять совпадение на prevlen перед вызовом check_match_len() из evaluate_repdist() для ускорения поиска
++ сохранять одну/все prevdist для каждой позиции для ускорения их вычисления
+- Evaluate REPDIST-based matches: REPDIST_CODES=1: на 100 мб/сек быстрее и на 1% хуже сжатие (0.1% на текстах)
+    можно использовать -rd1 в самом быстром режиме и при малой частоте кодов REPDIST2..4 (посчитать после Rescale() или в start_block())
+- len>=FastBytes  =>  выводить уже сформированный optimum-блок (похоже это интересно только для динамическиих цен в LZMA)
+- попробовать два exhash вместо [c]chash
++ prefetch() в CachingMatchFinder
++ -s1 => 64kb hash3 + 4kb hash2
+- huffman (0.5-1% проигрыша в сжатии 100m при выигрыше в скорости 3-5%)
+- выходить из find_all_matches после нахождения матча длиной >fb
+- сделать отображение len->price только для repdists; обновлять его только в начале формирования optimum-блока (на 1-2% быстрее на enwik8)
+- делать evaluate_position() только на последние EvalBytes позиций, куда дотягивается матч/repmatch: len=(match_len-EvalBytes,match_len]
+  на enwik8 EvalBytes=3: -1% сжатия +10% скорости
+* -l32 для каждой четвёртой позиции, -l8 для остальных (лучше делить по хешу)
+* multithreading
+* передача x[0].prevdist[] от одного optimum-блока к следующему
+* вычислить цену только один раз для одного слота len
+* имея список len/dist, можно вычислить прибавку цены для каждой из следующих max_len позиций независимо от других вычислений.
+  эти расчёты можно так же распараллелить как сам поиск матчей, например делать одновременно с ним
+* что если делать в обратном порядке - при поиске только сохранять матчи, но оценивать их на "месте назначения"? это позволит нам не оценивать
+  заведомо невыгодные варианты - например с меньшей длиной и большей дистанцией. или можно просто сохранять дистанцию в оценённом матче и
+  отказываться от вычисления оценки нового, если его дистанция больше (поскольку новый матч будет позднее и следовательно короче старого)
+* BitCachingMatchFinder - аналогично HT4, использует несколько старших бит для кеширования матча
+* упростить и ускорить CachingMatchFinder::find_all_matches
+
+tor.exe m:\100m -10 -x24 -b6m && tor.exe m:\100m.tor -om:\1 && (fc /b m:\1 m:\100m |head)
+C_Tornado:
+  проверять корректность всех параметров аналогично main.cpp
+  выходить при MINLEN>4 и ah/al==0
+4x4:b256m:t1:i0:tor:8m не работает: 256mb > 8mb

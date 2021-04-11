@@ -1,0 +1,4 @@
+EXPORTS
+  SetCompressionThreads
+  Set_compress_all_at_once
+  ppmd_de_compress

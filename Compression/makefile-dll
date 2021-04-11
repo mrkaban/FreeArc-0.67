@@ -1,0 +1,57 @@
+include ../common.mak
+OBJDIR = $(TEMPDIR)$(MODE)
+
+all: mkdir fazip.exe facompress.dll facompress_mt.dll
+mkdir:
+	-mkdir $(OBJDIR)
+
+CC          = cl
+LINKER      = link
+CODE_FLAGS  = -EHsc -MT -MP -Gy -GL -GR-
+OPT_FLAGS   = -Ox -arch:IA32
+DEBUG_FLAGS =
+CFLAGS      = -c $(CODE_FLAGS) $(OPT_FLAGS) $(DEBUG_FLAGS) $(DEFINES) -I_Encryption -I_Encryption/headers -I_Encryption/hashes
+LINKER_FLAGS = -LARGEADDRESSAWARE -LTCG user32.lib ole32.lib oleaut32.lib shell32.lib advapi32.lib
+DLL_LINKER_FLAGS = $(LINKER_FLAGS) -DLL -base:0x00400000
+
+EXE = fazip.exe
+EXE_OBJS = $(OBJDIR)/C_REP.obj $(OBJDIR)/C_BCJ.obj $(OBJDIR)/C_DisPack.obj $(OBJDIR)/C_Delta.obj $(OBJDIR)/C_LZMA.obj \
+           $(OBJDIR)/C_Dict.obj $(OBJDIR)/C_LZP.obj $(OBJDIR)/C_PPMD.obj $(OBJDIR)/C_GRZip.obj \
+           $(OBJDIR)/C_MM.obj $(OBJDIR)/C_TTA.obj $(OBJDIR)/C_Tornado.obj $(OBJDIR)/C_LZ4.obj $(OBJDIR)/C_4x4.obj \
+           $(OBJDIR)/C_CLS.obj $(OBJDIR)/C_External.obj $(OBJDIR)/CompressionLibrary.obj $(OBJDIR)/Common.obj
+$(EXE): $(OBJDIR)/fazip.obj $(EXE_OBJS)
+	cmd /c $(LINKER) -out:$(EXE) $< $(EXE_OBJS) $(LINKER_FLAGS)
+
+DLL  = facompress.dll
+DEF  = facompress.def
+OBJS = $(OBJDIR)/Common.obj $(OBJDIR)/CompressionLibraryDLL.obj $(OBJDIR)/7zCrcT8U.obj $(OBJDIR)/AesOpt.obj \
+       $(OBJDIR)/C_LZMA.obj $(OBJDIR)/C_PPMD.obj $(OBJDIR)/C_GRZip.obj $(OBJDIR)/C_LZP.obj $(OBJDIR)/C_Dict.obj
+# $(OBJDIR)/C_REP.obj
+$(DLL): $(DEF) $(OBJS)
+	cmd /c $(LINKER) -DEF:$(DEF) -out:$(DLL) $(OBJS) $(DLL_LINKER_FLAGS)
+
+DLL2  = facompress_mt.dll
+DEF2  = facompress_mt.def
+OBJS2 = $(OBJDIR)/Common.obj $(OBJDIR)/CompressionLibraryDLL.obj $(OBJDIR)/MultiThreading.obj $(OBJDIR)/7zCrcT8U.obj $(OBJDIR)/AesOpt.obj $(OBJDIR)/C_PPMD_mt.obj
+$(DLL2): $(DEF2) $(OBJS2)
+	cmd /c $(LINKER) -DEF:$(DEF2) -out:$(DLL2) $(OBJS2) $(DLL_LINKER_FLAGS)
+
+$(OBJDIR)/%.obj : %.asm
+	ml -c -Fo$@ $<
+$(OBJDIR)/%.obj: %.cpp
+	$(CC) $(CFLAGS) $< -Fo$@
+$(OBJDIR)/%.obj: */%.cpp
+	$(CC) $(CFLAGS) $< -Fo$@
+
+$(OBJDIR)/Common.obj: Common.cpp Common.h Compression.h
+$(OBJDIR)/CompressionLibrary.obj: CompressionLibrary.cpp Common.h Compression.h
+$(OBJDIR)/CompressionLibraryDLL.obj: CompressionLibrary.cpp Common.h Compression.h
+	$(CC) $(CFLAGS) -DFREEARC_COMPRESSION_DLL $< -Fo$@
+
+$(OBJDIR)/C_REP.obj: REP/C_REP.h REP/C_REP.cpp REP/REP.cpp
+$(OBJDIR)/C_Delta.obj: Delta/C_Delta.h Delta/C_Delta.cpp Delta/Delta.cpp
+$(OBJDIR)/C_Tornado.obj: Tornado/*.cpp
+$(OBJDIR)/C_LZMA.obj: LZMA2/C_LZMA.cpp LZMA2/C_LZMA.h LZMA2/C/*.c LZMA2/C/*.h
+$(OBJDIR)/C_PPMD.obj: PPMD/C_PPMD.cpp PPMD/C_PPMD.h PPMD/PPMdType.h PPMD/PPMd.h PPMD/SubAlloc.hpp PPMD/Coder.hpp PPMD/Model.cpp
+$(OBJDIR)/C_PPMD_mt.obj: PPMD/C_PPMD.cpp PPMD/C_PPMD.h PPMD/PPMdType.h PPMD/PPMd.h PPMD/SubAlloc.hpp PPMD/Coder.hpp PPMD/Model.cpp
+	$(CC) $(CFLAGS) -DPPMD_MT $< -Fo$@
