@@ -1,0 +1,51 @@
+4x4/C_4x4.cpp:  Set_compress_all_at_once_Until_end_of_block _(1);
+4x4/C_4x4.cpp:  Set_compress_all_at_once_Until_end_of_block _(1);
+4x4/C_4x4.cpp:  Set_compress_all_at_once_Until_end_of_block _(1);
+
+Compression.h:extern int compress_all_at_once;
+Compression.h:void __cdecl Set_compress_all_at_once (int n);
+Compression.h:struct Set_compress_all_at_once_Until_end_of_block
+Compression.h:  Set_compress_all_at_once_Until_end_of_block (int n)  {save = compress_all_at_once;  Set_compress_all_at_once(n);}
+Compression.h:  ~Set_compress_all_at_once_Until_end_of_block()       {Set_compress_all_at_once(save);}
+
+CompressionLib.hs:foreign import ccall "Compression.h &" compress_all_at_once :: Ptr CInt
+
+CompressionLibrary.cpp:int compress_all_at_once = 0;
+CompressionLibrary.cpp:void __cdecl Set_compress_all_at_once (int n)
+CompressionLibrary.cpp:  compress_all_at_once = n;
+CompressionLibrary.cpp:  static FARPROC f  = LoadFromDLL ("Set_compress_all_at_once");
+CompressionLibrary.cpp:  static FARPROC f2 = LoadFromDLL ("Set_compress_all_at_once", TRUE);
+
+HsCELS.hs:foreign import ccall "Compression.h &" compress_all_at_once :: Ptr CInt
+
+LZ4/C_LZ4.cpp:  return (compress_all_at_once? 0 : BlockSize*2)
+LZ4/C_LZ4.h:  virtual MemSize GetDecompressionMem      (void)               {return compress_all_at_once? 0 : BlockSize*2;}
+
+LZMA2/C/LzFind.c:  if (compress_all_at_once)
+LZMA2/C_LZMA.cpp:  if (pmem)  *pmem  =  MemSize (mymin (MEMSIZE_MAX, hash_memory + (compress_all_at_once? 0 : buf_memory)));
+LZMA2/C_LZMA.cpp:  double mem4 = mymax (double(mem) - p->hashSize - (compress_all_at_once? 0:1*mb) - (p->algorithm? 5*mb:1*mb), 0);
+LZMA2/C_LZMA.cpp:  double buf_k = compress_all_at_once? 0 : (p->matchFinder==kHT4? 1.25:1.5);
+LZMA2/C_LZMA.cpp:  if (compress_all_at_once && matchFinder==kHT4) {
+LZMA2/C_LZMA.cpp:  return compress_all_at_once? 1*mb : dictionarySize+RANGE_DECODER_BUFFER_SIZE;
+
+PPMD/C_PPMD.cpp:  FARPROC f = compress_all_at_once? (de_compress? de_compress : (FARPROC) PPMD_de_compression::ppmd_de_compress) : (FARPROC) NULL;
+PPMD/C_PPMD.h:  MemSize chunk;     // Размер сжимаемого куска при compress_all_at_once
+
+Tornado/C_Tornado.cpp:  return m.hashsize + m.buffer + tornado_compressor_outbuf_size(m.buffer) + (compress_all_at_once? 0:LARGE_BUFFER_SIZE*2) + (m.caching_finder>=5?2*mb:0) + m.auxhash_size;
+Tornado/C_Tornado.cpp:    int koeff = compress_all_at_once? 5:3;
+Tornado/C_Tornado.cpp:    m.buffer   = tornado_compressor_calc_dict (mem>128*kb? mem-64*kb:64*kb);       // Calculate dictionary size depending on memory left and compress_all_at_once
+Tornado/DataTables.cpp:   int ENTRIES;     // Number of entries in the list. When list overflows, data in outbuf are processed and written to outstream (unless we are in compress_all_at_once mode)
+Tornado/EntropyCoder.cpp:        bufsize    = compress_all_at_once? _bufsize+(_bufsize/4) : LARGE_BUFFER_SIZE;  // For all-at-once compression input buffer should be large enough to hold all compressed data
+Tornado/main.cpp:int compress_all_at_once = 0;
+Tornado/Tornado.cpp:{return compress_all_at_once?  mem/9*4
+Tornado/Tornado.cpp:        compress_all_at_once?  buffer+(buffer/4)+512 :
+Tornado/Tornado.cpp:{return compress_all_at_once?  buffer+(buffer/8)+512 :
+Tornado/Tornado.cpp:    if (bytes==0 || compress_all_at_once)  return 0;     // All input data was successfully compressed
+Tornado/Tornado.cpp:    int chunk = compress_all_at_once? m.buffer : mymin (m.shift>0? m.shift:m.buffer, LARGE_BUFFER_SIZE);
+Tornado/Tornado.cpp:    BYTE *read_point = compress_all_at_once || bytes_to_compress!=-1? bufend : bufend-mymin(LOOKAHEAD,bytes); // Next point where next chunk of data should be read to buf
+Tornado/Tornado.cpp:    Coder coder (m.encoding_method, callback, auxdata, tornado_compressor_outbuf_size (m.buffer, bytes_to_compress), compress_all_at_once? 0:chunk*2);
+Tornado/Tornado.cpp:    if (compress_all_at_once)  write_end = outbuf + bufsize + 1;    // All data should be written after decompression finished
+Tornado/Tornado.cpp:                WRITE_DATA_IF (tables.filled() && !compress_all_at_once);
+
+_Examples/4x4.cpp:        compress_all_at_once = 1;
+_Examples/4x4.hs:  poke compress_all_at_once 1     -- enables block-to-block compression mode in tornado and lzma

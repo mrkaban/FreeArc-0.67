@@ -1,0 +1,18 @@
+4x4/C_4x4.cpp:        result = compressor->cmethod->DeCompressMem (COMPRESS, InBuf+_4x4_HEADER_SIZE, InSize, OutBuf+_4x4_HEADER_SIZE, &OutputSize, _4x4_callback, this, &CodecState);
+4x4/C_4x4.cpp:            result = compressor->cmethod->DeCompressMem (DECOMPRESS, InBuf, InSize, OutBuf, &OutputSize, _4x4_callback, this, &CodecState);
+4x4/C_4x4.cpp:_4x4Job::~_4x4Job()  {CodecState  &&  compressor->cmethod->DeCompressMem (COMPRESS, NULL, 0, NULL, NULL, NULL, NULL, &CodecState);}
+
+Compression.h:  virtual int DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback=0, void *auxdata=0, void **CodecState=0);
+CompressionLibrary.cpp:// Реализация DeCompressMem по умолчанию: через compress/decompress и MemBuf. Затратный, но универсальный вариант
+CompressionLibrary.cpp:int COMPRESSION_METHOD::DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback, void *auxdata, void **CodecState)
+
+LZ4/C_LZ4.cpp:int LZ4_METHOD::DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback, void *auxdata, void **CodecState)
+LZ4/C_LZ4.h:  virtual int DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback=0, void *auxdata=0, void **CodecState=0);
+
+LZMA2/C_LZMA.cpp:int LZMA_METHOD::DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback, void *auxdata, void **CodecState)
+LZMA2/C_LZMA.cpp:  return DeCompressMem (DECOMPRESS, NULL, 0, NULL, NULL, callback, auxdata);
+LZMA2/C_LZMA.cpp:  return DeCompressMem (COMPRESS, NULL, 0, NULL, NULL, callback, auxdata);
+LZMA2/C_LZMA.h:  virtual int DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback=0, void *auxdata=0, void **CodecState=0);
+
+Tornado/C_Tornado.cpp:int TORNADO_METHOD::DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback, void *auxdata, void **CodecState)
+Tornado/C_Tornado.h:  virtual int DeCompressMem (COMPRESSION direction, void *input, int inputSize, void *output, int *outputSize, CALLBACK_FUNC *callback=0, void *auxdata=0, void **CodecState=0);
