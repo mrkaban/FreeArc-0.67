@@ -1,0 +1,44 @@
+#ifdef _64BIT
+#define EXENAME "srep64.exe"
+#else
+#define EXENAME "srep.exe"
+#endif
+
+#define MY_VS_FFI_FILEFLAGSMASK  0x0000003FL
+#define MY_VOS_NT_WINDOWS32  0x00040004L
+
+#define MY_VFT_APP  0x00000001L
+#define MY_VFT_DLL  0x00000002L
+
+
+1       VERSIONINFO
+FILEVERSION     3,9,2,0
+PRODUCTVERSION  3,9,2,0
+FILEFLAGSMASK   MY_VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0L
+FILEOS          MY_VOS_NT_WINDOWS32
+FILETYPE        MY_VFT_APP
+FILESUBTYPE     0
+BEGIN
+        BLOCK "StringFileInfo"
+        BEGIN
+                BLOCK "040904B0"
+                BEGIN
+                        VALUE "CompanyName", "Bulat.Ziganshin@gmail.com"
+                        VALUE "LegalCopyright", "(c) Bulat Ziganshin 2007-2013"
+
+                        VALUE "ProductName", "SuperREP"
+                        VALUE "FileDescription", "Multi-gigabyte range LZ77 preprocessor  http://freearc.org/research/SREP39.htm"
+
+                        VALUE "OriginalFilename", EXENAME
+                        VALUE "InternalName", EXENAME
+
+                        VALUE "FileVersion", "3.9.2.0 (23-Jul-2013)"
+                        VALUE "ProductVersion", "3.9.2.0"
+                END
+        END
+        BLOCK "VarFileInfo"
+        BEGIN
+                VALUE "Translation", 0x0409, 0x04B0
+        END
+END

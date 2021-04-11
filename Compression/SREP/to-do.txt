@@ -1,0 +1,221 @@
+REP+SREP plan:
+  >2gb files in linux (fseek!)
+  устранить static_statbuf!
+  учёт в inmem последствий округления вверх dictsize в h!
+  -dl512 by default even with -l4k!?
+  -d1g:512:c128 syntax and -mmap support
+  inmem.compress: match_dist<Barrier? len<MINLEN1 : len<MINLEN2
+  при частичном перекрытии input_match и match - обрезать один из них (лучше более дальний)
+    перед записью матча проверять альтернативный и выбирать для общей области более близкий из них или совсем убирать более далёкий если он в результате обрезки стал короче min_match
+
+  -m1/m2: расширять матч соседними байтами если он оказался в пределах dictionary (соответственно не обнулять размер словаря при CDC, но и не вызывать inmem.compress;  плюс корректная печать при этом настроек словарного сжатия)
+  -m3: попробовать разбить буфер на 2 мб куски и обработать их параллельно!!!
+    если не получится - вынести в отдельный thread обновление bitarr/chunkarr
+    m4/m5? - чтение из сжимаемого файла в разных потоках
+  multi-buffer optimization in prepare_block (2 GB/s as in compress_cdc); remix hash bits / use another secondary hash: universal, crc32c...
+  нужен некий фреймворк для последовательно-параллельного выполнения hash_buffer и последовательностей prepare+compress с передачей statbuf между разными compress()
+    читаем 8 буферов, отправляем их на обработку, пишем предыдущие 8 по мере появления результатов их сжатия, читаем ещё 8...
+
+compress():
+  ?вернуть i=1+L*n; вынести всю обработку последних CYCLES байт в отдельный цикл; делать при этом update-then-use (может это улучшит скорость)?
+  при пропуске матча не заходить в главный цикл вообще - делать только mark_bitarr
+  всегда иметь некоторый запас данных, запрошенных через prefetch, так чтобы заведомо не ждать их прихода - даже если chunkarr prefetching запросил всего пару строк из LOOKAHEAD байт
+    или bitarr prefetching запросил слишком мало данных из-за того что last_match_end оказался близок к i+L
+    Возможно, надо сделать hashes1/2 циклическими буферами и переходить к следующему циклу (prefetch-bitarr/prefetch-chunkarr/find_match) когда в буфере кончилось место,
+      обновляя bitarr/chunkarr в те моменты соотв. циклов (prefetch-chunkarr/find_match), когда происходит переход через i+L
+  hash1=crc32c, hash2a=hash1+a few bytes - достаточно для первичной проверки в chunkarr, после совпадения вычисляем hash2b для hasharr (RollingPolynom для l>1k; umac/universal hash иначе)
+    перенести заполнение hasharr значениями hash2 в b/g thread; тогда в основном треде останется вычислить от 77m*512 до 2m*64k байт в hash2 (хотя для файлов в сотни гиг всё может быть хуже)
+    использовать для hash2 semi-rolling hash (обновляемый на 4 байта за раз, хранить можно 4 хеша с разными младшими битами смещения, и выбирать между update и moveto для подходящего хеша)
+  hash1=CRC + hash2b=universal ==> zero false positives? reduce digest from 160 to 128 bits? join hasharr with digestarr. -m5: 16-bit hash2 + 8+8 bit I/O accelerator?
+    hash2 - не скользящий, а быстровычисляемый (поскольку использовать его приходится не так уж и часто - 4% всех позиций)
+    -hash128..224 (128 x86 default, 160 x64 default)
+  прогнать LOOKAHEAD=64..1024 (using 1/4-1/8 of 32kb L1 cache) со всеми методами сжатия чтобы найти оптимальные значения в зависимости от -a/-l (интересно, как учесть различия между машинами? вероятно прогоном с DDR3-1333)
+  в hash.moveto добавить if остаток>=8, if остаток>=4, if остаток>=2, if остаток>=1 чтобы вместо цикла с неясным числом исполнений получить всегда [не]исполняемые переходы
+  в hash.update<N> проверить вариант с циклом по 2 элемента
+
+misc:
+  спецформат statbuf[] для улучшения последующего сжатия при -m1/2 (просто номера chunks) и -m3/3f -d- (округление match_src)
+  команда i и печать статистики при создании/извлечении архива: decompression memory, compressed/decompressed=ratio%, matches_count/bytes_occupied_by_matches/%_of_the_compressed_file
+    опция для ограничения decompression memory в процессе сжатия
+  L!=2^N: L=k*CYCLES (округлить вверх), затем blocksize=2^N*L (округлить вниз)
+    digestarr[chunk] may not be filled at all! in particular, for L!=2^n
+    put into HashTable chunks split between two input blocks (situation that's almost impossible when L==2^n)
+  заменить все new на malloc с проверкой успешности их выделения
+  опция -t для автоматического тестирования архива сразу после упаковки (реализация: или методы класса или for mode=COMPRESS,DECOMPRESS) {if (mode==COMPRESS or COMPRESS_AND_TEST) ...; if (mode==DECOMPRESS or COMPRESS_AND_TEST) ...;}
+  Future-LZ/Index-LZ: не хранить в словаре дубликаты данных, вместо этого снабжать каждый блок данных счётчиком применимости
+
+DictionaryCompressor
+  улучшение сжатия -m0 до уровня -m5 за счёт многократных проверок hash table
+  hashsize = 125-150% of used space + multiple checks + caching of hash bits + prefetching
+  сделать универсальный интерфейс Deduplicator(prepare_block,compress_block,memreq,errcode) и выразить DictionaryCompressor<uint32/uint64> через него
+    или compress<uint32/uint64>/prepare<type> to optimize memory usage with dictionaries <4gb
+  hash chains for 256-byte chunks для макс. сжатия + interface Deduplicator
+  reimplement REP using interface Deduplicator with choice of compression algos, from CDC to hash-chains
+  use Cockoo hashing for DictionaryCompressor::hasharr?
+
+Многопоточный алгоритм REP+SREP:
+  1. REP-поиск, сохранение найденных матчей
+  2. Разбиваем данные на куски по 64кб-1мб
+  2.1. Данные, не попавшие в REP-матчи, ищем по bitarr/chunkarr/hasharr
+  2.2. Одновременно с этим сохраняем данные для обновления bitarr/chunkarr/hasharr
+  2.3. Дождавшись завершения обработки предыдущего блока, обновляем их
+
+REP+SREP:
+  параллельное выполнение compress() и inmem.compress()
+  сделать BUFFERS изменяемым (2/3 в зависимости от dictsize; не выделять secondary stats buf при dictsize==0; выделять все буфера одним куском и сувать в stat[i]/header[i] только ссылки на их части)
+  m5: отказываться от проверки матча через I/O если он находится в пределах dictsize! может ухудшить сжатие из-за того что в h поиск более настойчив чем в inmem
+  multi-pass, f.e. -m2:l4k+m0:lc64+tempfile+m5:l512
+  записывать сразу по многу сжатых блоков: hdd-to-hdd compression: 10% of real time spent in disk seeks (see srep-on-slow-HDD)
+  m3?/m4/m5 - использовать данные в памяти для проверки матча
+
+CDC:
+  -m1: start hash checking from the first byte of STRIPE (prehash 48 bytes before the stripe if not at the bufstart)
+  -m2: 32/size_t bits depending on L (4k/64k), STRIPE=block_size/NumThreads
+  move chunkarr into separate classs used both by CDC and non-CDC global-context classes
+  5 GB/s: mmap+crc32c(asm)+lock-free queue+Yield+1.25memacces/chunk(use higher chunkarr[] bits for hash)+prefetch+compute splitted VMAC by parts inside worker threads
+  проверять продолжение найденного матча по vhash (и вставлять последующие блоки в add_hash)
+  min..len..max (и использовать min/max хеш для выбора границы?)
+  попробовать мин/макс хеш в диапазоне вместо hash>maxhash
+  allocate startarr[]/digestarr[]/hasharr[], say, in 4mb chunks when required (also useful for -m3..-m5 since it doesn't need large contiguous memory blocks)
+  add more entropy to cryptographic_prng besides of clock()
+  ?считать universal хеш от hash каждые 16 байт, чтобы получить дополнительные биты энтропии
+  хранить позиции блоков более компактно (скажем по 2-4 байта на длину плюс одна 8-байтовая начальная позиция на 16 блоков)
+  хранить 32-битный hash в chunkarr чтобы при поиске сверять хеши без лишнего обращения в ОЗУ (или использовать старшие биты chunknum, которые всегда равны нулю при данном filesize/L)
+  перенести в g поиск в хеше для -m1/-m2, сделав структуру (hash1..32+chunknum)+(chunklen+hash128..192)
+  передавать в add_hash адрес digest[curchunk], что сделает возможным поиск кусочков с номерами > total_chunks (но не их вставку в структуры поиска)
+  ?stripe=3*5*7*N
+rolling crc (*3 to defer data dependencies?):
+  pextrb al, xmm0, i
+  crc ebx, al
+  pextrb cl, xmm0, i
+  xor ebx, table[ecx]
+  cmp ebx, edx  +  ja large_crc_found
+
+-m3..m5:
+  compress<ACCELERATOR=XXX> - поддерживать любые акселераторы кратные XXX (начиная с XXX=16. или даже с XXX=4)
+  smarter -a default / -aX handling depending on L   (-a16/16 лучше 16/8 на vhd/22g с -l512);  -a2/4 - default?
+  -a0/-a1 были пессимизированы в 3.90, так что их можно ускорить, сделав отдельные версии compress() - считающие только один 512-байтный хеш
+    -a0: 64-bit hash2 only (2*32-bit on x86)
+    -a1: 64-bit hash==hash2 (32-bit hash + 32-bit hash2 on x86)
+    >1: 2*32-bit hash2 в x86
+  crc32c для hash1/hash2
+  PolynomialRollingHash: hash+a-b*k ==> hash^a^b*k (нет переносов и любой порядок комбинирования)
+  hash.moveto: load 16 bytes; shuffle 4 lower bytes into 32-bit subwords of SSE register; pmul by 1,K,K^2,K^3; next 4 bytes mul by K^4,K^5,K^6,K^7...; pmul accum by K^16; add them all together
+  CombinedRollingHash<crc,32bit-mul> для x86
+  replace sha1 with vhash/cbc-mac(aes) or universal hashing with fortuna-generated key-array
+  фоновый поток вычисления хешей + prefetch из хеш-таблицы за ~20 проверок вперёд
+  выбирать один максимальный из 32 хешей внутри 512-байтного блока, искать один лучший из 16 хешей (расход памяти как в -a1, число обращений в ОЗУ: 55 млрд/16=3.5 млрд)
+      при 6 байтах/блок (48 бит) в bitarr число ложных попаданий ещё в 96 раз меньше, т.е. обращений в hasharr - 35млн ложных+7млн истинных
+  hasharr += chunkarr (reduce mem accesses). alternatively: search first in hasharr, indexed by hash+hash2. once hasharr[i]==hash2 found, read chunkarr[i]
+  после нахождения match вычислять sha1 нескольких блоков вперёд можно параллельно поскольку типичный match имеет длину порядка 10 блоков
+     (или после того, как проверенная длина совпадения превысила например 4*L, также можно сравнивать с одним-трёмя последними блоками для простых повторяющихся паттернов)
+  add_hash/mark_match_possibility - делать только prefetch с фактическим выполнением в следующем цикле по L (4% ускорения)
+  перед началом обработки буфера вставить все его 512-байтные блоки в хеш, не удаляя предыдущие записи (новые окажутся в конце хеш-цепочек);
+     затем можно разбить буфер на 8 частей и искать матчи в них параллельно; причём вставку в хеш для *следующего* буфера можно делать параллельно с этим поиском
+  nullify 4 lower bits of chunkarr[] index so that we check 4*16 bytes == cpu cache line (and make sure that chunkarr itself is aligned at 64)
+  ?asm bitarr setting so that it uses one asm operation
+  сравнить -l512/4k/64k с slp+- чтобы понять какая часть ускорения при больших L получается за счёт отсутствия промахов TLB
+
+-m5:
+  incremental SliceHash (i-й бит зависит от первых 32*i байт) с двумя элементами на один chunk - для проверок сверху вниз и снизу вверх
+  SlicedArray classs (use only in win/x86 because x64 doesn't have memory fragmentation and on linux malloc will leave unused bytes - may be we need sbrk?)
+  1-bit hash for every L/8 bytes (try incremental hash of 256+32*i bytes) OR try "bit hashtab[32][256]"
+  save/try multiple entries with the same 256-byte hash (-hN[x])
+  BUFSIZE = 32k/256k/2m (и сразу читаем байты перед матчем)
+  почему после 256-байтного матча, который не удалось расширить до 512 байт, отказ от проверки оставшихся 256-байтных матчей в этом chunk даёт такой большой выигрыш по скорости (и числу false matches)? см. update от 2013-07-07 00:12
+    вероятно потому что этот "полуматч" длиной 256..511 байт имеет кучу повторений в других частях файла: записать и проанализировать все полуматчи в каком-нибудь одном чанке
+  overlap (plus m/t to increase I/O Queue Depth?) I/O with computations in -m4/5
+  -m3f: reduce memreqs by not storing sha1 hashes in memory, instead saving sha1 hashes of potential matches in the matchstream and checking them on the second pass
+  -m3f: сохранять по 256 байт с обоих сторон от матча, чтобы потом найти его точные границы
+  save potential match bytes (checked by 32-bit hash plus 2*L bytes around) to the tempfiles (one tempfile per each 1/10 of match src range) and check them in second pass
+  проверять другие блоки с тем же hash, если match с первым оказался слишком короток
+  -l512 -c256 приводит к большому числу false positives:
+    dll100 7.072.327 309.211 8.829   dll700 22.443.465 1.444.311 33.207    5g 332.911.300 13.556.124 454.055   lp2 338.343.016 26.385.285 1.447.763
+    if (k==saved_k && saved_match_len+(i-saved_i)<MIN_MATCH)   return last_match_end;  для -m5 - пропуск безнадёжных матчей
+
+misc:
+  Быстрое вычисление хеша>4байт, например умножение 32*32->64, второй хеш типа (int[0]*C)/2+int[1]....
+  -f:
+    BUG: в случае сбоя повторить распаковку этого блока ещё два раза, печатать число исправленных ошибок
+    печатать сжатый размер с учётом разбиения матчей, пересекающих границу блока
+  BUG: -m1/-m2/-f (de)compression may place any number of LZ matches per block, not limited to 8mb/L (now patched by using MAX_STATS_PER_BLOCK=blocksize/sizeof(STAT))
+  не слишком длинные матчи (32-1024 байт?) в пределах небольших дистанций (64-1024 мб) должны запрещать дальнейшие матчи <1024 байт до своего конца?
+  like REP, allow to use larger MinMatchLen for small distances. пример для использования совместно с lzma:64mb :
+    - при дистанции <64 мб и длине совпадения <4 кб - пропускаем эти данные на выход (не ища в них других совпадений!)
+    - при дистанции <64 мб и длине совпадения >4 кб - кодируем
+    - при дистанции >64 мб и длине совпадения >32 байт - кодируем
+  segmentation algorithm: split data into 128 kb blocks, build *full* index on 512-byte chunks, and compute amount of repeated bytes for every pair of blocks
+  Cuckoo/Hopscotch hashing: быстрая выборка при медленной вставке
+
+REP:
+  запоминать в начале блока - какие куски данных будут использованы, и ограничивать их суммарный размер значением SetDecompressionMem
+    1-проходная упаковка и распаковка с 1 потоком сжатых данных, но при этом экономия памяти при распаковке
+  вместо dict сохранять только VMAC hashes: экономия памяти при упаковке
+
+high-level:
+  разбить на модули: io.c+hashes.c+far_matches+near_matches+compress/compress_cdc/decompress+future_lz+main_cycle+cmdline_driver+to-do.txt
+  I/O через внешние команды с проверкой exit code (там где возможно его делать чисто последовательно)
+  многопоточное bcj/dispack/lz4/tor/lzma/delta дожатие сжатых блоков
+  error checking: make all printf in main thread, perform "goto cleanup" instead of error() after file open operations
+  use WinAPI to create VMFILE as temporary file not necessarily saved to disk
+  не проводить дополнительное обнуление массивов, выделенных через VirtualAlloc
+  use mmap for uncompressed file and/or keep a few last uncompressed blocks in memory
+    mmap только на последний гигабайт файла - чтобы не забивать память его содержимым; или просто буферизовать последний гигабайт?
+  раздельные треды для r/w и md5/sha1 (especially important for -m1 w/o -mmap, or I/O-bound situations - i.e. almost any compression on HDD)
+  выбор mmap/read/mmap+read, суммирование байтов через 4к для заполнения mmap-буфера
+  EnvSetConsoleTitle
+  опции -datafile (аналогично -index); -write0s (писать в datafile нули вместо пропуска матчей); -basefile (для генерации патчей); -non-buffered (отключение буферизации в CreateFile)
+    Режим, в котором дублирующиеся блоки не выкидываются, а обнуляются, а вся управляющая информация сохраняется в отдельном файле
+
+m/t:
+  1. схватить ReadLock и прочитать блок
+  2. получить от треда пред. блока small_index_head[]
+  3. заполнить digestarr(SHA1) и hasharr(rolling hash), обновить копию small_index_head[] и отослать её треду след. блока
+  4. сжать блок, используя поиск в small_index_head[] и full_index, обновляя small_index_head[]
+  5. получить UpdateLock от предыдущего блока и обновить full_index with rolling hashes of the block (приостановив все остальные треды)
+альтернативно - тупо использовать несколько потоков одновременно, игнорируя ссылки вперёд или превращая их в ссылки назад
+
+альтернативная реализация m/t:
+  1. Для ускорения перерасчёта sliding hash выполнять расчёты заранее и сохранить в памяти (один из каждых ACCELERATOR байт).
+     К примеру, прочитанный блок 8 мб разбить на кусочки в 64 кб, индексируемые несколькими фоновыми потоками. Тогда основному потоку останется только
+       проверять/обновлять хеш-таблицы
+  2. Для ускорения обращений в память при работе с хеш-таблицами производить эти обращения также в фоновых потоках.
+     Тогда в основном потоке эти данные будут "всегда готовы" (фоновые потоки должны обрабатывать данные не очень большими блоками чтобы данные остались в кеше)
+
+Экстремально быстрый алгоритм (с bitarr, без content-based champions selection):
+  1. обновляем crc32c (509 bytes) на 4/8/16 байта (crc32c+3*clmul/8байт), делаем prefetch из bitarr, запоминаем crc32c через xmm: на всё нужно 1-2 такта
+  2. в след. цикле проверяем байт из bitarr, при успехе вычисляем скользящий 64-bit hash2(512 bytes) и делаем 4-8-16 выборок из hasharr (видимо, crc64):
+         порядка миллиарда попаданий = хеширование 512 гбайт = 20-30 секунд на 100 гбайт файл, т.е. 1 такт/1 байт файла
+  3. в след. цикле (?) сравниваем хеши из hasharr со старшими словами соответствующих hash2, при успехе регистрируем условный матч и находим его условную длину по hash2
+  4. для окончательной проверки матча вместо sha1 - aes-based hashing (0.5sec/gb на calc+check, причём всё - в потоке I/O)
+
+Проблемы якорного хеширования: смещения, на которых сработает якорь, непредсказуемы, поэтому прохешированные блоки должны либо перекрываться, либо между ними будут
+  оставаться промежутки. Далее SHA1 должен сохраняться либо от прохешированных блоков (вызывая те же самые перекрытия либо промежутки), либо их границы не будут совпадать
+  с границами прохешированных блоков, в результате чего нельзя будет проверить совпадение прохешированного якорного блока со старым. Вероятно, второй вариант предпочтительней,
+  поскольку совпадения не должны быть ровно L байт, обычно они продолжаются несколько дольше в обе стороны.
+
+Якорное хеширование:
+  файл разбивается на фиксированные блоки по 512 байт, из каждого блока выделяются "лучшие" 256 байт (например с макс. хеш-суммой) со смещением offset относ. начала блока
+  для каждого 256-байтного блока запоминаются: chunk (4 bytes) + hash256 (4 bytes) + offset (2-4 bytes) + hash512 (2-4 bytes)
+  при сканировании файла из каждых 64-256 позиций выбирается "лучшая", по hash256 ищутся похожие блоки, которые полностью сопоставляются по hash512
+
+Полу-якорное хеширование:
+  Берём K подблоков блока длины L, каждый длиной L-K+1. Выбираем из них C наибольших, или все удовлетворящие некоему условию (lb(K) старших бит равны 0 и т.д.).
+  Заносим их в bitarr. При поиске проверяем по bitarr только блоки длины l-K+1, удовлетворяющие тому же условию.
+  Например, из 32 подблоков длины L-31 заносим один с наибольшей хеш-суммой. При поиске выбираем из каждых 16 блоков длины L-31 один с наиб. суммой и ищем в bitarr только его.
+  Отсутствие его отметки в bitarr гарантирует (?) отсутствие матча (поскольку макс. из 16 выровненных блоков должен включат макс. из 32 невыровненных).
+Уточнение:
+  Берём K подблоков и вычисляем их хеши. Находим max из первых K/2 хешей, затем из следущих K/2 хешей и т.д. - всего K/2+1 значений, из которых большинство будет совпадать.
+  Отмечаем их в bitarr.
+  При сканировании файла находим max из каждых K/2 хешей и проверяем по bitarr только его.
+Альтернативно:
+  Вставляем в bitarr максимальный хеш из K длиной L-K+1.
+  В файле высчитываем макс. хеш из последних K и ищем его в bitarr.
+
+Further optimizations:
+  найти способ проверять целый байт вместо отдельного бита без существенной потери точности предсказания
+      например разбить файл на 8 кусков и чекинить в первом куске только в первый бит и т.д.
+      или в первом байте цикла до ACCEL устанавливать первый бит проиндекированного байта и т.д.: for (i=0..ACCEL-1)  bitarr [hash[j-L+i..j+i]] ~= (1<<i)
+        aka: mark_bitarr - отмечать i%CYCLES-й бит в 1/2/4../64-битовом слове, check_bitarr - проверить (для скорости) сначала целиком это слово, а затем посылать на обработку только hash2, соответствующие взведённым битам
+  найти способ повысить точность предсказания в том же объёме памяти (например определять какие конкретно из ACCEL позиций можно использовать - 15% ускорение при -a4)
+  оптимизировать использование битов в хеше, например не использовать малоинформативные младшие биты (постараться исключить sha1 mismatches)

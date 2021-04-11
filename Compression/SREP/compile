@@ -1,0 +1,2 @@
+g++ -DFREEARC_UNIX -DFREEARC_INTEL_BYTE_ORDER -D_FILE_OFFSET_BITS=64 -O3 -static -funroll-all-loops -msse2 -mtune=generic -DMY_MEMCPY -I../_Encryption -I../_Encryption/headers -I../_Encryption/hashes ../Common.cpp srep.cpp -osrep  -s -lrt -lpthread -lstdc++ -Wno-write-strings -Wno-unused-result $*
+#./compile -UMY_MEMCPY for 32-bit
